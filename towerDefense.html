@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Tower Defense</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            touch-action: none;
+            overflow: hidden;
+            background-color: #2E2519; /* OSRS Dark Brown */
+        }
+        canvas {
+            background-color: #5C7D3C; /* OSRS Grass */
+            cursor: pointer;
+            display: block;
+            margin: 0 auto;
+            border: 4px solid #1E1A13; /* OSRS Border */
+            border-radius: 0.5rem;
+        }
+        .tower-button.selected {
+            background-color: #FFFF00; /* OSRS Yellow */
+            border-color: #FFFF00; /* OSRS Yellow */
+            color: #1E1A13;
+            transform: scale(1.1);
+        }
+        .game-ui {
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .action-button {
+            transition: all 0.2s ease-in-out;
+            border: 2px solid #1E1A13;
+        }
+        .action-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .action-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .modal {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .osrs-ui-panel {
+            background-color: #4B3D2A;
+            border: 4px solid #1E1A13;
+        }
+        .osrs-stat-box {
+            background-color: #2E2519;
+        }
+        .osrs-text-yellow {
+            color: #FFFF00;
+        }
+        .osrs-text-red {
+            color: #FF0000;
+        }
+        .osrs-text-cyan {
+             color: #00FFFF;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div id="game-container" class="w-full max-w-4xl mx-auto flex flex-col lg:flex-row gap-4">
+
+        <!-- Game Canvas -->
+        <div class="flex-grow">
+            <canvas id="gameCanvas"></canvas>
+        </div>
+
+        <!-- Right Panel UI -->
+        <div id="ui-panel" class="w-full lg:w-64 osrs-ui-panel p-4 rounded-lg flex flex-col gap-4">
+            <h1 class="text-2xl text-center osrs-text-yellow tracking-wider">TOWER DEFENCE</h1>
+            
+            <div class="game-ui grid grid-cols-3 lg:grid-cols-2 gap-2 text-center text-xs">
+                <div class="osrs-stat-box p-2 rounded-lg"><div class="osrs-text-yellow">GOLD</div><div id="gold" class="text-lg">100</div></div>
+                <div class="osrs-stat-box p-2 rounded-lg"><div class="osrs-text-red">LIVES</div><div id="lives" class="text-lg">20</div></div>
+                <div class="osrs-stat-box p-2 rounded-lg col-span-1 lg:col-span-2"><div class="osrs-text-cyan">WAVE</div><div id="wave" class="text-lg">0</div></div>
+            </div>
+
+            <div id="build-tower-ui">
+                <h2 class="text-lg text-center mb-2 osrs-text-yellow">TOWERS</h2>
+                <div class="grid grid-cols-2 lg:grid-cols-1 gap-2">
+                    <button id="archer" class="tower-button border-2 border-black rounded-lg p-2 transition-transform duration-200 text-xs" data-tooltip="Fast-firing, single-target tower.">
+                        <div class="text-sm">Archer</div><div class="text-yellow-400 font-bold">25G</div></button>
+                    <button id="mage" class="tower-button border-2 border-black rounded-lg p-2 transition-transform duration-200 text-xs" data-tooltip="Single-target magic damage. Can be specialized at Lvl 5.">
+                        <div class="text-sm">Mage</div><div class="text-yellow-400 font-bold">75G</div></button>
+                    <button id="melee" class="tower-button border-2 border-black rounded-lg p-2 transition-transform duration-200 text-xs col-span-2 lg:col-span-1" data-tooltip="Spins to deal Area-of-Effect damage to all nearby enemies.">
+                        <div class="text-sm">Melee</div><div class="text-yellow-400 font-bold">60G</div></button>
+                </div>
+            </div>
+
+            <div id="tower-info-ui" class="hidden">
+                 <h2 id="tower-name" class="text-lg text-center mb-2 osrs-text-yellow"></h2>
+                 <div class="text-xs space-y-1 text-center">
+                     <p>Level: <span id="tower-level" class="osrs-text-yellow"></span></p>
+                     <p>Damage: <span id="tower-damage" class="osrs-text-yellow"></span></p>
+                     <p>Range: <span id="tower-range" class="osrs-text-yellow"></span></p>
+                     <p>Speed: <span id="tower-speed" class="osrs-text-yellow"></span>/sec</p>
+                 </div>
+                 <div class="mt-4 space-y-2">
+                     <button id="upgrade-tower-btn" class="action-button w-full text-white font-bold py-2 px-4 rounded-lg text-xs bg-blue-600 hover:bg-blue-700">Upgrade (<span id="upgrade-cost"></span>G)</button>
+                     <button id="sell-tower-btn" class="action-button w-full text-white font-bold py-2 px-4 rounded-lg text-xs bg-red-600 hover:bg-red-700">Sell (<span id="sell-value"></span>G)</button>
+                 </div>
+                 <div id="mage-specialization-ui" class="hidden mt-4 pt-2 border-t-2 border-yellow-400">
+                      <h3 class="text-sm text-center mb-2 osrs-text-yellow">SPECIALIZE</h3>
+                      <div class="grid grid-cols-2 gap-2 text-xs">
+                          <button data-spec="fire" class="action-button spec-btn bg-red-700">Fire (300G)</button>
+                          <button data-spec="water" class="action-button spec-btn bg-blue-700">Water (300G)</button>
+                          <button data-spec="earth" class="action-button spec-btn bg-yellow-800">Earth (300G)</button>
+                          <button data-spec="air" class="action-button spec-btn bg-gray-400">Air (300G)</button>
+                      </div>
+                 </div>
+            </div>
+
+            <button id="startWaveBtn" class="action-button w-full text-white font-bold py-3 px-4 rounded-lg text-sm tracking-wider mt-auto bg-green-700 hover:bg-green-800">START WAVE</button>
+        </div>
+    </div>
+    
+    <div id="gameOverModal" class="modal fixed inset-0 w-full h-full flex items-center justify-center hidden">
+        <div class="osrs-ui-panel text-white p-8 rounded-lg shadow-2xl text-center border-4 border-red-500">
+            <h2 class="text-4xl font-bold osrs-text-red mb-4">GAME OVER</h2>
+            <p class="text-lg mb-2">You survived <span id="wavesSurvived" class="font-bold osrs-text-yellow">0</span> waves.</p>
+            <button id="restartGameBtn" class="action-button mt-4 text-white font-bold py-3 px-6 rounded-lg text-lg bg-green-700 hover:bg-green-800">RESTART</button>
+        </div>
+    </div>
+
+    <!-- Tooltip -->
+    <div id="tooltip" class="hidden absolute p-2 text-xs rounded-md pointer-events-none z-50" style="background-color: #1E1A13; border: 2px solid #FFFF00;"></div>
+
+    <!-- Developer Test Buttons -->
+    <div class="fixed bottom-4 left-4 flex gap-2 z-50">
+        <button id="add-gold-btn" class="action-button bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
+            +100 Gold
+        </button>
+        <button id="spawn-enemy-btn" class="action-button bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-xs">
+            Spawn Enemy
+        </button>
+    </div>
+
+            <div id="spawnEnemyModal" class="modal fixed inset-0 w-full h-full flex items-center justify-center hidden">
+                <div class="osrs-ui-panel text-white p-6 rounded-lg shadow-2xl text-center relative">
+                    <button id="close-spawn-modal-btn" class="absolute top-2 right-2 text-red-500 font-bold text-lg">&times;</button>
+                    <h3 class="text-lg text-center mb-4 osrs-text-yellow">SPAWN ENEMY</h3>
+                    <div class="space-y-2">
+                        <button data-enemy="goblin" class="action-button spawn-btn w-full bg-green-700 hover:bg-green-800 text-white font-bold py-2 px-4 rounded-lg text-sm">Goblin</button>
+                        <button data-enemy="rat" class="action-button spawn-btn w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg text-sm">Giant Rat</button>
+                        <button data-enemy="spider" class="action-button spawn-btn w-full bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-lg text-sm">Giant Spider</button>
+                        <button data-enemy="cow" class="action-button spawn-btn w-full bg-lime-700 hover:bg-lime-800 text-white font-bold py-2 px-4 rounded-lg text-sm">Cow</button>
+                        <button data-enemy="zamorak" class="action-button spawn-btn w-full bg-red-800 hover:bg-red-900 text-white font-bold py-2 px-4 rounded-lg text-sm">Zamorak Crafter</button>
+                    </div>
+                </div>
+            </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const goldEl = document.getElementById('gold');
+        const livesEl = document.getElementById('lives');
+        const waveEl = document.getElementById('wave');
+        const startWaveBtn = document.getElementById('startWaveBtn');
+        const gameOverModal = document.getElementById('gameOverModal');
+        const wavesSurvivedEl = document.getElementById('wavesSurvived');
+        const restartGameBtn = document.getElementById('restartGameBtn');
+        const archerButton = document.getElementById('archer');
+        const mageButton = document.getElementById('mage');
+        const meleeButton = document.getElementById('melee');
+        const buildTowerUI = document.getElementById('build-tower-ui');
+        const towerInfoUI = document.getElementById('tower-info-ui');
+        const towerNameEl = document.getElementById('tower-name');
+        const towerLevelEl = document.getElementById('tower-level');
+        const towerDamageEl = document.getElementById('tower-damage');
+        const towerRangeEl = document.getElementById('tower-range');
+        const towerSpeedEl = document.getElementById('tower-speed');
+        const upgradeTowerBtn = document.getElementById('upgrade-tower-btn');
+        const upgradeCostEl = document.getElementById('upgrade-cost');
+        const sellTowerBtn = document.getElementById('sell-tower-btn');
+        const sellValueEl = document.getElementById('sell-value');
+        const mageSpecializationUI = document.getElementById('mage-specialization-ui');
+        const spawnEnemyModal = document.getElementById('spawnEnemyModal');
+
+        let TILE_SIZE = 48;
+        let gold, lives, wave, enemies, towers, projectiles;
+        let selectedTowerType = null, selectedPlacedTower = null;
+        let waveInProgress = false, animationFrameId;
+        let mouseGridX = -1, mouseGridY = -1;
+        let totalEnemiesInWave = 0, enemiesSpawnedInWave = 0;
+        let previewAnimationTimer = 0;
+
+        const map = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0],[0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0],[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]];
+        let path;
+        const pathDefinition = [{x:-1,y:1},{x:12,y:1},{x:12,y:5},{x:3,y:5},{x:3,y:9},{x:16,y:9}];
+
+        class Enemy {
+            constructor(health, speed, goldValue) {
+                this.x = path[0].x - TILE_SIZE; this.y = path[0].y; this.pathIndex = 0;
+                this.baseSpeed = speed; this.speed = speed; this.maxHealth = health;
+                this.health = health; this.goldValue = goldValue; this.isDying = false;
+                this.deathAnimationTimer = 0.5; this.isDead = false; this.angle = 0;
+                this.legAnimationTimer = Math.random() * Math.PI * 2;
+                this.effects = { burn:{d:0,dur:0,t:0}, slow:{m:1,dur:0}, stun:{dur:0} };
+            }
+            move() {
+                if (this.isDying || this.isDead || this.effects.stun.dur > 0) return;
+                if (this.pathIndex >= path.length-1) { lives--; updateUI(); this.isDead = true; return; }
+                const target = path[this.pathIndex+1];
+                const dx = target.x - this.x, dy = target.y - this.y;
+                const dist = Math.hypot(dx, dy);
+                if (dist < this.speed) { this.x = target.x; this.y = target.y; this.pathIndex++; } 
+                else { this.x+=(dx/dist)*this.speed; this.y+=(dy/dist)*this.speed; this.angle=Math.atan2(dy,dx); }
+            }
+            update(deltaTime) {
+                this.updateEffects(deltaTime); this.move();
+                if (this.isDying) { this.deathAnimationTimer -= deltaTime; if (this.deathAnimationTimer <= 0) this.isDead = true; } 
+                else if (!this.isDead) { this.legAnimationTimer += deltaTime * this.speed * 4; }
+            }
+            updateEffects(deltaTime) {
+                if (this.effects.stun.dur > 0) this.effects.stun.dur -= deltaTime;
+                if (this.effects.slow.dur > 0) { this.effects.slow.dur -= deltaTime; this.speed = this.baseSpeed * this.effects.slow.m; }
+                else { this.speed = this.baseSpeed; }
+                if (this.effects.burn.dur > 0) {
+                    this.effects.burn.dur -= deltaTime; this.effects.burn.t -= deltaTime;
+                    if (this.effects.burn.t <= 0) { this.takeDamage(this.effects.burn.d, false); this.effects.burn.t = 1; }
+                }
+            }
+            takeDamage(amount, givesGold = true) {
+                if (this.isDying) return; this.health -= amount;
+                if (this.health <= 0) { this.health = 0; if (givesGold) gold += this.goldValue; updateUI(); this.isDying = true; }
+            }
+            applyEffect(type, payload) {
+                if(type === 'burn') this.effects.burn = {d:payload.damage,dur:payload.duration,t:1};
+                else if(type === 'slow') this.effects.slow = {m:payload.multiplier,dur:payload.duration};
+                else if(type === 'stun') this.effects.stun.dur = Math.max(this.effects.stun.dur, payload.duration);
+            }
+            draw() {
+                ctx.save(); ctx.translate(this.x, this.y);
+                if (this.isDying) { const p = Math.max(0, this.deathAnimationTimer / 0.5); ctx.globalAlpha = p; ctx.scale(p, p); }
+                this.drawBody(); this.drawEffects(); ctx.restore();
+                if (!this.isDying) this.drawHealthBar();
+            }
+            drawEffects() {
+                if (this.effects.stun.dur > 0) { ctx.fillStyle = 'rgba(255, 255, 0, 0.5)'; ctx.font = `${this.radius}px 'Press Start 2P'`; ctx.fillText("!!!", 0, -this.radius); }
+                if (this.effects.slow.dur > 0) { ctx.fillStyle = 'rgba(0, 150, 255, 0.3)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 1.2, 0, Math.PI * 2); ctx.fill(); }
+                if (this.effects.burn.dur > 0) { ctx.fillStyle = 'rgba(255, 100, 0, 0.4)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 1.1, 0, Math.PI * 2); ctx.fill(); }
+            }
+            drawHealthBar() { ctx.fillStyle = '#FF0000'; ctx.fillRect(this.x-this.radius, this.y-this.radius-10, (this.health/this.maxHealth)*this.radius*2, 5); ctx.strokeStyle = '#000000'; ctx.strokeRect(this.x-this.radius, this.y-this.radius-10, this.radius*2, 5); }
+        }
+        class Goblin extends Enemy {
+            constructor(health, speed) { super(health, speed, 5); this.radius = 12; }
+            drawBody() { 
+                const animCycle = this.legAnimationTimer;
+                const bodyBob = Math.cos(animCycle * 2) * 0.5;
+                const legSwing = Math.sin(animCycle) * 0.5; 
+                
+                ctx.save();
+                ctx.translate(0, bodyBob);
+
+                const skinGreen = '#8A9A4B'; // OSRS Goblin Green
+                const shirtBrown = '#987654'; // A standard brown
+                const pantsBrown = '#654321'; // Darker brown
+                const clubBrown = '#8B4513';
+                const eyeColor = '#FFFF00';
+                
+                const thighLength = 8;
+                const shinLength = 8;
+                const footHeight = 6;
+                const kneeBend = (Math.cos(animCycle * 2) + 1) * 0.4; // Bend from 0 to 0.8 radians
+                const frontKneeBend = (Math.cos(animCycle * 2 + Math.PI) + 1) * 0.4;
+
+                // --- LEGS ---
+                // Back Leg
+                ctx.save();
+                ctx.translate(-4, this.radius * 0.4); // Hip joint
+                ctx.rotate(-legSwing);
+                ctx.fillStyle = pantsBrown;
+                ctx.fillRect(-3, 0, 6, thighLength); // Thigh
+                ctx.translate(0, thighLength); // Move to knee
+                ctx.rotate(kneeBend); // Apply knee bend
+                ctx.fillRect(-3, 0, 6, shinLength); // Shin
+                ctx.fillStyle = skinGreen;
+                ctx.fillRect(-2.5, shinLength, 5, footHeight); // Foot
+                ctx.restore();
+
+                // Front Leg
+                ctx.save();
+                ctx.translate(4, this.radius * 0.4); // Hip joint
+                ctx.rotate(legSwing);
+                ctx.fillStyle = pantsBrown;
+                ctx.fillRect(-3, 0, 6, thighLength); // Thigh
+                ctx.translate(0, thighLength); // Move to knee
+                ctx.rotate(frontKneeBend); // Apply knee bend
+                ctx.fillRect(-3, 0, 6, shinLength); // Shin
+                ctx.fillStyle = skinGreen;
+                ctx.fillRect(-2.5, shinLength, 5, footHeight); // Foot
+                ctx.restore();
+                
+                // --- TORSO & ARMS ---
+                // Back Arm & Club
+                ctx.save();
+                ctx.translate(-5, -this.radius * 0.5);
+                ctx.rotate(0.8 + Math.sin(animCycle) * 0.1);
+                // Club
+                ctx.fillStyle = clubBrown;
+                ctx.beginPath();
+                ctx.ellipse(0, 20, 5, 12, 0, 0, Math.PI * 2);
+                ctx.fillRect(-2, 0, 4, 20);
+                ctx.fill();
+                // Hand
+                ctx.fillStyle = skinGreen;
+                ctx.beginPath();
+                ctx.arc(0, 0, 5, 0, Math.PI*2);
+                ctx.fill();
+                ctx.restore();
+
+                // Torso
+                ctx.fillStyle = shirtBrown;
+                ctx.beginPath();
+                ctx.moveTo(-8, -8); 
+                ctx.lineTo(8, -8);
+                ctx.lineTo(6, 10);
+                ctx.lineTo(-6, 10);
+                ctx.closePath(); 
+                ctx.fill();
+
+                // Front Arm
+                ctx.save();
+                ctx.translate(5, -this.radius*0.3);
+                ctx.rotate(-0.4 + Math.cos(animCycle) * 0.1)
+                ctx.fillStyle = skinGreen;
+                ctx.fillRect(-2.5, -10, 5, 12); // upper arm
+                ctx.translate(0, -10);
+                ctx.rotate(1.2);
+                ctx.fillRect(-2.5, 0, 5, 12); // lower arm
+                ctx.beginPath();
+                ctx.arc(0, 12, 4, 0, Math.PI*2); // hand
+                ctx.fill();
+                ctx.restore();
+                
+                // --- HEAD ---
+                ctx.fillStyle = skinGreen;
+                ctx.beginPath(); // Main head shape
+                ctx.moveTo(0, -22); 
+                ctx.lineTo(10, -18); 
+                ctx.lineTo(8, -6);
+                ctx.lineTo(-8, -6);
+                ctx.lineTo(-10, -18);
+                ctx.closePath();
+                ctx.fill();
+
+                // Ears
+                ctx.beginPath(); // Right Ear
+                ctx.moveTo(8, -20); ctx.lineTo(15, -22); ctx.lineTo(12, -16);
+                ctx.closePath(); ctx.fill();
+                ctx.beginPath(); // Left Ear
+                ctx.moveTo(-8, -20); ctx.lineTo(-15, -22); ctx.lineTo(-12, -16);
+                ctx.closePath(); ctx.fill();
+
+                // Eyes
+                ctx.fillStyle = eyeColor;
+                ctx.beginPath();
+                ctx.arc(-4, -14, 2.5, 0, Math.PI*2);
+                ctx.arc(4, -14, 2.5, 0, Math.PI*2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+        class ZamorakCrafter extends Enemy {
+            constructor(health, speed) {
+                super(health, speed, 25);
+                this.radius = 15;
+            }
+
+            drawBody() {
+                const animCycle = this.legAnimationTimer;
+                const bodyBob = Math.cos(animCycle * 2) * 1;
+                const legSwing = Math.sin(animCycle) * 0.6;
+
+                const robeColor = '#8B0000'; // Dark Red
+                const trimColor = '#FF0000'; // Bright Red
+                const skinColor = '#9E9E9E'; // Grey
+                const staffColor = '#654321'; // Brown
+
+                ctx.save();
+                ctx.translate(0, bodyBob);
+
+                // --- LEGS ---
+                // Back Leg
+                ctx.save();
+                ctx.translate(-3, this.radius * 0.4);
+                ctx.rotate(-legSwing);
+                ctx.fillStyle = skinColor;
+                ctx.fillRect(-3, 0, 6, 14);
+                ctx.restore();
+
+                // Front Leg
+                ctx.save();
+                ctx.translate(3, this.radius * 0.4);
+                ctx.rotate(legSwing);
+                ctx.fillStyle = skinColor;
+                ctx.fillRect(-3, 0, 6, 14);
+                ctx.restore();
+
+
+                // --- ROBE ---
+                ctx.fillStyle = robeColor;
+                ctx.beginPath();
+                ctx.moveTo(-this.radius * 0.8, -this.radius * 0.8);
+                ctx.lineTo(this.radius * 0.8, -this.radius * 0.8);
+                ctx.lineTo(this.radius * 0.6, this.radius * 0.9);
+                ctx.lineTo(-this.radius * 0.6, this.radius * 0.9);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Robe Trim
+                ctx.fillStyle = trimColor;
+                ctx.fillRect(-this.radius*0.6, this.radius*0.9 - 4, this.radius*1.2, 4);
+
+
+                // --- STAFF & ARMS ---
+                ctx.save();
+                ctx.translate(5, -this.radius * 0.2); // Position staff
+                ctx.rotate(0.2);
+                
+                // Staff
+                ctx.fillStyle = staffColor;
+                ctx.fillRect(0, -22, 4, 44);
+
+                // Zamorak Symbol
+                ctx.fillStyle = trimColor;
+                ctx.beginPath();
+                ctx.arc(2, -26, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(2, -32); ctx.lineTo(2, -20);
+                ctx.moveTo(-4, -26); ctx.lineTo(8, -26);
+                ctx.moveTo(-2, -30); ctx.lineTo(6, -22);
+                ctx.stroke();
+
+                // Arms
+                ctx.fillStyle = skinColor;
+                ctx.fillRect(-8, -10, 10, 5); // Back hand
+                ctx.fillRect(-6, 5, 10, 5); // Front hand
+                ctx.restore();
+
+
+                // --- HEAD & HOOD ---
+                // Hood
+                ctx.fillStyle = robeColor;
+                ctx.beginPath();
+                ctx.arc(0, -this.radius * 0.7, this.radius * 0.8, Math.PI, Math.PI * 2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Head
+                ctx.fillStyle = skinColor;
+                ctx.beginPath();
+                ctx.arc(0, -this.radius * 0.7, this.radius * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = trimColor;
+                ctx.beginPath();
+                ctx.arc(-3, -this.radius * 0.8, 2, 0, Math.PI*2);
+                ctx.arc(3, -this.radius * 0.8, 2, 0, Math.PI*2);
+                ctx.fill();
+
+
+                ctx.restore();
+            }
+        }
+        class Cow extends Enemy {
+            constructor(health, speed) { super(health, speed, 8); this.radius = 14; }
+            drawBody() {
+                // No rotation, cow always faces forward
+                const animCycle = this.legAnimationTimer;
+                const bodyBob = Math.cos(animCycle * 2) * 0.5;
+                const legSwing = Math.sin(animCycle * 0.8) * 4;
+
+                ctx.save();
+                // Shift the entire drawing up so hooves are at the baseline
+                ctx.translate(0, bodyBob - this.radius * 0.5);
+
+                const bodyWhite = '#FFFFFF';
+                const patchBlack = '#000000';
+                const udderPink = '#FFC0CB';
+                const hornGray = '#A9A9A9';
+                const hoofGray = '#4A4A4A';
+
+                const bodyWidth = this.radius * 1.2;
+                const bodyHeight = this.radius * 0.9;
+
+                // --- LEGS ---
+                // Back Legs
+                ctx.fillStyle = '#EAEAEA'; // Darker white
+                ctx.fillRect(-8 - legSwing * 0.3, 8, 5, 12); // Back Left
+                ctx.fillRect(3 + legSwing * 0.3, 8, 5, 12); // Back Right
+                ctx.fillStyle = hoofGray;
+                ctx.fillRect(-8 - legSwing * 0.3, 20, 5, 3);
+                ctx.fillRect(3 + legSwing * 0.3, 20, 5, 3);
+
+                // --- BODY ---
+                ctx.fillStyle = bodyWhite;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, bodyWidth, bodyHeight, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#4A4A4A';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Patches
+                ctx.fillStyle = patchBlack;
+                ctx.beginPath();
+                ctx.ellipse(-6, -1, 5, 3, -0.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(5, 4, 6, 4, 0.8, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Udder
+                ctx.fillStyle = udderPink;
+                ctx.beginPath();
+                ctx.arc(0, bodyHeight * 0.8, 4, 0, Math.PI);
+                ctx.fill();
+                
+                // Front Legs
+                ctx.fillStyle = bodyWhite;
+                ctx.fillRect(-6 + legSwing * 0.3, 8, 5, 12); // Front Left
+                ctx.fillRect(1 - legSwing * 0.3, 8, 5, 12); // Front Right
+                 ctx.fillStyle = hoofGray;
+                ctx.fillRect(-6 + legSwing * 0.3, 20, 5, 3);
+                ctx.fillRect(1 - legSwing * 0.3, 20, 5, 3);
+                
+                // --- HEAD ---
+                ctx.save();
+                ctx.translate(0, -bodyHeight * 0.8); // Position head
+                ctx.rotate(Math.sin(animCycle * 0.5) * 0.1); // Head bob
+                
+                // Head shape
+                ctx.fillStyle = bodyWhite;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.radius * 0.7, this.radius * 0.8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                 ctx.stroke();
+                
+                // Snout
+                ctx.fillStyle = udderPink;
+                ctx.beginPath();
+                ctx.ellipse(0, this.radius * 0.5, this.radius * 0.5, this.radius * 0.3, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes & Nostrils
+                ctx.fillStyle = patchBlack;
+                ctx.beginPath();
+                ctx.arc(-3, -1, 2, 0, Math.PI * 2); // Left eye
+                ctx.arc(3, -1, 2, 0, Math.PI * 2); // Right eye
+                ctx.arc(-2.5, this.radius * 0.5, 1, 0, Math.PI * 2); // Left nostril
+                ctx.arc(2.5, this.radius * 0.5, 1, 0, Math.PI * 2); // Right nostril
+                ctx.fill();
+                
+                // Horns
+                ctx.fillStyle = hornGray;
+                ctx.beginPath();
+                ctx.moveTo(-4, -this.radius * 0.7); ctx.quadraticCurveTo(-9, -this.radius * 1.2, -7, -this.radius * 1.5); ctx.closePath();
+                ctx.moveTo(4, -this.radius * 0.7); ctx.quadraticCurveTo(9, -this.radius * 1.2, 7, -this.radius * 1.5); ctx.closePath();
+                ctx.fill();
+
+                ctx.restore(); // End head transformations
+
+                ctx.restore(); // End main transformations
+            }
+        }
+        class GiantRat extends Enemy {
+            constructor(health, speed) { super(health, speed, 3); this.radius = 10; }
+            drawBody() {
+                ctx.rotate(this.angle);
+                const animCycle = this.legAnimationTimer;
+                const bodyBob = Math.cos(animCycle * 2) * 1;
+                const legSwing = Math.sin(animCycle) * 0.4;
+                
+                ctx.save();
+                ctx.translate(0, bodyBob);
+                const bodyColor = '#9F8170';
+                const earColor = '#D2B48C';
+
+                // Legs
+                ctx.fillStyle = bodyColor;
+                ctx.fillRect(-6, 5, 4, 8); // Back leg
+                ctx.fillRect(2, 5, 4, 8); // Front leg
+
+                // Tail
+                ctx.strokeStyle = earColor;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-12, 0);
+                ctx.quadraticCurveTo(-20, 5, -25, -5);
+                ctx.stroke();
+
+                // Body
+                ctx.fillStyle = bodyColor;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 12, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Head
+                ctx.beginPath();
+                ctx.arc(10, 0, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Ears
+                ctx.fillStyle = earColor;
+                ctx.beginPath();
+                ctx.arc(8, -5, 4, 0, Math.PI * 2);
+                ctx.arc(8, 5, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+        class GiantSpider extends Enemy {
+            constructor(health, speed) { super(health, speed, 15); this.radius = 14; }
+            drawBody() {
+                ctx.rotate(this.angle);
+                const animCycle = this.legAnimationTimer;
+                const bodyBob = Math.cos(animCycle * 2) * 1;
+                const legSwing = Math.sin(animCycle * 0.8);
+
+                ctx.save();
+                ctx.translate(0, bodyBob);
+
+                const bodyColor = '#3A3A3A'; // Dark grey/black
+                const legColor = '#2A2A2A';
+                const eyeColor = '#FF0000'; // Red
+
+                // --- LEGS (4 pairs) ---
+                ctx.strokeStyle = legColor;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                // Back pair
+                ctx.moveTo(-4, 0); ctx.lineTo(-12 + legSwing * 5, -10); ctx.lineTo(-18 + legSwing * 3, -8);
+                ctx.moveTo(-4, 0); ctx.lineTo(-12 + legSwing * 5, 10); ctx.lineTo(-18 + legSwing * 3, 8);
+                // Second pair
+                ctx.moveTo(0, 0); ctx.lineTo(-6 - legSwing * 3, -12); ctx.lineTo(-10 - legSwing * 5, -18);
+                ctx.moveTo(0, 0); ctx.lineTo(-6 - legSwing * 3, 12); ctx.lineTo(-10 - legSwing * 5, 18);
+                 // Third pair
+                ctx.moveTo(4, 0); ctx.lineTo(6 + legSwing * 5, -14); ctx.lineTo(12 + legSwing * 3, -20);
+                ctx.moveTo(4, 0); ctx.lineTo(6 + legSwing * 5, 14); ctx.lineTo(12 + legSwing * 3, 20);
+                // Front pair
+                ctx.moveTo(8, 0); ctx.lineTo(14 - legSwing * 3, -10); ctx.lineTo(20 - legSwing * 5, -12);
+                ctx.moveTo(8, 0); ctx.lineTo(14 - legSwing * 3, 10); ctx.lineTo(20 - legSwing * 5, 12);
+
+                ctx.stroke();
+
+
+                // Abdomen
+                ctx.fillStyle = bodyColor;
+                ctx.beginPath();
+                ctx.ellipse(-8, 0, 10, 12, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Cephalothorax (Head/Body part)
+                ctx.beginPath();
+                ctx.ellipse(5, 0, 10, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Eyes
+                ctx.fillStyle = eyeColor;
+                ctx.beginPath();
+                ctx.arc(11, -3, 1.5, 0, Math.PI * 2);
+                ctx.arc(11, 0, 1.5, 0, Math.PI * 2);
+                ctx.arc(11, 3, 1.5, 0, Math.PI * 2);
+                ctx.arc(8, -4, 1.5, 0, Math.PI * 2);
+                ctx.arc(8, 4, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+        class Tower {
+            constructor(x, y, cost, range, fireRate, damage, type) { this.x = x; this.y = y; this.cost = cost; this.range = range; this.fireRate = fireRate; this.damage = damage; this.type = type; this.cooldown = 0; this.target = null; this.level = 1; this.upgradeCost = Math.floor(cost * 0.8); this.totalSpent = cost; }
+            findTarget() { if(this.target && this.isInRange(this.target) && this.target.health>0) return; this.target=null; let closestDist=Infinity; for (const e of enemies) { if(e.health>0){ const dist=Math.hypot(this.x-e.x, this.y-e.y); if(dist<closestDist && dist<=this.range){closestDist=dist; this.target=e;}}}}
+            isInRange(e) { return Math.hypot(this.x - e.x, this.y - e.y) <= this.range; }
+            update(deltaTime) { this.findTarget(); this.cooldown -= deltaTime; if (this.cooldown <= 0 && this.target) { this.shoot(); this.cooldown = 1 / this.fireRate; } }
+            upgrade() { if (gold >= this.upgradeCost) { gold -= this.upgradeCost; this.totalSpent += this.upgradeCost; this.level++; this.upgradeCost = Math.floor(this.upgradeCost * 1.5); this.damage = Math.floor(this.damage * 1.4); if (this.type !== 'melee') this.range += TILE_SIZE*0.2; updateUI(); } }
+            getSellValue() { return Math.floor(this.totalSpent * 0.75); }
+            shoot() {}
+            draw() { if (this.level > 1) { ctx.save(); const fS = Math.floor(TILE_SIZE*0.35); ctx.font = `${fS}px 'Press Start 2P'`; ctx.fillStyle = '#FFFF00'; ctx.textAlign = 'right'; const tX = this.x+TILE_SIZE/2-4; const tY = this.y-TILE_SIZE/2+fS+2; ctx.strokeStyle='black'; ctx.lineWidth=3; ctx.strokeText(this.level, tX, tY); ctx.fillText(this.level, tX, tY); ctx.restore(); } }
+            drawRange() { ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'; ctx.beginPath(); ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+        }
+        class ArcherTower extends Tower { 
+            constructor(x,y){
+                super(x,y,25,TILE_SIZE*3,2,15,'archer');
+                this.isShooting = false;
+                this.shootAnimTimer = 0;
+            } 
+            shoot(){
+                projectiles.push(new Arrow(this.x,this.y,this.target,7,this.damage));
+                this.isShooting = true;
+                this.shootAnimTimer = 0.15; // Animation duration
+            } 
+            update(dT){
+                super.update(dT);
+                if(this.isShooting){
+                    this.shootAnimTimer -= dT;
+                    if(this.shootAnimTimer <= 0) {
+                        this.isShooting = false;
+                    }
+                }
+            }
+            draw(isPreview = false){
+                // Stone Base (static, does not rotate)
+                ctx.fillStyle = '#A9A9A9'; // Light grey stone
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, TILE_SIZE * 0.35, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#696969'; // Dark grey mortar
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Crossbow part (rotates and animates)
+                ctx.save();
+                ctx.translate(this.x, this.y);
+
+                // Rotate towards target
+                if (this.target) {
+                    const angleToTarget = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                    ctx.rotate(angleToTarget);
+                }
+
+                // Recoil animation
+                let recoilOffset = 0;
+                if (this.isShooting && !isPreview) {
+                    recoilOffset = Math.sin(( (0.15 - this.shootAnimTimer) / 0.15) * Math.PI) * -4;
+                }
+                ctx.translate(recoilOffset, 0);
+
+                // Crossbow Body (stock)
+                ctx.fillStyle = '#8B4513'; // Wood color
+                ctx.fillRect(-TILE_SIZE * 0.2, -TILE_SIZE * 0.1, TILE_SIZE * 0.4, TILE_SIZE * 0.2);
+
+                // Crossbow Limbs (bow part)
+                ctx.fillStyle = '#6F4F28'; // Darker wood
+                ctx.fillRect(TILE_SIZE * 0.15, -TILE_SIZE * 0.25, TILE_SIZE * 0.1, TILE_SIZE * 0.5);
+
+                // String - drawn in a "ready" position
+                if (!this.isShooting || isPreview) {
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(TILE_SIZE * 0.2, -TILE_SIZE * 0.25);
+                    ctx.lineTo(-TILE_SIZE * 0.15, 0);
+                    ctx.lineTo(TILE_SIZE * 0.2, TILE_SIZE * 0.25);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+
+                if (!isPreview) {
+                    super.draw();
+                }
+            } 
+        }
+        class MageTower extends Tower {
+            constructor(x, y) { 
+                super(x, y, 75, TILE_SIZE * 2.5, 0.8, 40, 'mage'); 
+                this.specialization = null; 
+                this.animationTimer = Math.random() * Math.PI * 2;
+            }
+            update(dT){
+                super.update(dT);
+                this.animationTimer += dT * 2;
+            }
+            shoot() { 
+                switch(this.specialization){ 
+                    case 'fire': case 'water': case 'earth': 
+                        projectiles.push(new ElementalBolt(this.x,this.y,this.target,5,this.damage,this.specialization)); 
+                        break; 
+                    case 'air': {
+                        const leadFrames = 15;
+                        const targetEnemy = this.target;
+                        const predictedX = targetEnemy.x + Math.cos(targetEnemy.angle) * targetEnemy.speed * leadFrames;
+                        const predictedY = targetEnemy.y + Math.sin(targetEnemy.angle) * targetEnemy.speed * leadFrames;
+                        const predictedTarget = { x: predictedX, y: predictedY, pathIndex: targetEnemy.pathIndex };
+                        projectiles.push(new Tornado(this.x, this.y, predictedTarget)); 
+                        break; 
+                    }
+                    default: 
+                        projectiles.push(new MagicBolt(this.x,this.y,this.target,6,this.damage)); 
+                } 
+            }
+            specialize(type) { 
+                const cost = 300; 
+                if (this.level>=5 && !this.specialization && gold>=cost) { 
+                    gold-=cost; this.totalSpent+=cost; this.specialization=type; 
+                    if (type === 'air') this.fireRate /= 2;
+                    updateUI(); 
+                } 
+            }
+            draw(animationTimerOverride) { 
+                const timer = animationTimerOverride !== undefined ? animationTimerOverride : this.animationTimer;
+                ctx.fillStyle='#4B0082'; ctx.beginPath(); ctx.moveTo(this.x-TILE_SIZE*0.4,this.y+TILE_SIZE*0.5); ctx.lineTo(this.x+TILE_SIZE*0.4,this.y+TILE_SIZE*0.5); ctx.lineTo(this.x,this.y-TILE_SIZE*0.2); ctx.closePath(); ctx.fill(); 
+                
+                let c='#00FFFF'; 
+                if(this.specialization==='fire')c='#FF4500'; 
+                else if(this.specialization==='water')c='#1E90FF'; 
+                else if(this.specialization==='earth')c='#8B4513'; 
+                else if(this.specialization==='air')c='#F5F5F5'; 
+                
+                const bobbleRadius = TILE_SIZE * 0.05;
+                const bobbleX = this.x + Math.cos(timer) * bobbleRadius;
+                const bobbleY = this.y-TILE_SIZE*0.3 + Math.sin(timer) * bobbleRadius;
+                
+                ctx.fillStyle=c; ctx.beginPath(); 
+                ctx.arc(bobbleX, bobbleY, TILE_SIZE*0.15, 0, Math.PI*2); 
+                ctx.fill(); 
+                
+                if (animationTimerOverride === undefined) {
+                    super.draw();
+                }
+            }
+        }
+        class MeleeTower extends Tower { 
+            constructor(x,y){super(x,y,60,TILE_SIZE*2,1,30,'melee');this.isAttacking=false; this.attackAnimTimer=0; this.rotation=0;} 
+            shoot(){
+                this.isAttacking = true;
+                this.attackAnimTimer = 0.3;
+                for (const enemy of enemies) {
+                    if (this.isInRange(enemy)) {
+                        enemy.takeDamage(this.damage);
+                    }
+                }
+            } 
+            update(dT){
+                this.cooldown -= dT;
+                if (this.cooldown <= 0) {
+                    let enemyInRange = false;
+                    for(const enemy of enemies) {
+                        if (this.isInRange(enemy)) {
+                            enemyInRange = true;
+                            break;
+                        }
+                    }
+                    if (enemyInRange) {
+                        this.shoot();
+                        this.cooldown = 1 / this.fireRate;
+                    }
+                }
+                if(this.isAttacking){
+                    this.attackAnimTimer -= dT;
+                    this.rotation += dT * 25;
+                    if(this.attackAnimTimer <= 0) {
+                        this.isAttacking = false;
+                    }
+                } else {
+                    this.rotation += dT * 0.5;
+                }
+            } 
+            draw(animationTimerOverride){
+                const rotation = animationTimerOverride !== undefined ? animationTimerOverride : this.rotation;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(rotation);
+                const spikeCount = 8;
+                const baseRadius = TILE_SIZE * 0.3;
+                let spikeLength = TILE_SIZE * 0.15;
+                if (this.isAttacking && animationTimerOverride === undefined) {
+                    const progress = Math.sin(((0.3 - this.attackAnimTimer) / 0.3) * Math.PI);
+                    spikeLength += progress * TILE_SIZE * 0.1;
+                }
+                ctx.fillStyle = '#C0C0C0';
+                for (let i = 0; i < spikeCount; i++) {
+                    const angle = (i / spikeCount) * Math.PI * 2;
+                    ctx.save();
+                    ctx.rotate(angle);
+                    ctx.beginPath();
+                    ctx.moveTo(baseRadius, 0);
+                    ctx.lineTo(baseRadius + spikeLength, -3);
+                    ctx.lineTo(baseRadius + spikeLength, 3);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.restore();
+                }
+                ctx.fillStyle = '#8B0000';
+                ctx.beginPath();
+                ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                
+                if (animationTimerOverride === undefined) {
+                    super.draw();
+                }
+            } 
+        }
+        class Projectile {
+            constructor(x, y, target, speed, damage) { this.x = x; this.y = y; this.target = target; this.speed = speed; this.damage = damage; this.isDead = false; }
+            update(dT) { if (this.move(dT)) this.isDead = true; }
+            move(dT) { if (!this.target||this.target.health<=0)return true; const dx=this.target.x-this.x, dy=this.target.y-this.y; const dist=Math.hypot(dx,dy); if (dist<this.speed){this.hitTarget();return true;}else{this.x+=(dx/dist)*this.speed;this.y+=(dy/dist)*this.speed;} return false; }
+            hitTarget() { this.target.takeDamage(this.damage); }
+        }
+        class Arrow extends Projectile { draw(){ctx.save();ctx.translate(this.x,this.y);const a=Math.atan2(this.target.y-this.y,this.target.x-this.x);ctx.rotate(a);ctx.fillStyle='#8B4513';ctx.fillRect(-10,-1,20,2);ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(5,-4);ctx.lineTo(5,4);ctx.closePath();ctx.fill();ctx.restore();} }
+        class MagicBolt extends Projectile { constructor(x,y,t,s,d){super(x,y,t,s,d);this.radius=5;} draw(){ctx.fillStyle='#E0E0E0';ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fill();} }
+        class ElementalBolt extends Projectile {
+            constructor(x,y,t,s,d,type){super(x,y,t,s,d);this.type=type;this.radius=7;}
+            hitTarget(){super.hitTarget(); switch(this.type){case'fire':this.target.applyEffect('burn',{damage:this.damage*0.2,duration:3});break;case'water':this.target.applyEffect('slow',{multiplier:0.5,duration:2});break;case'earth':if(Math.random()<0.25)this.target.applyEffect('stun',{duration:0.75});break;}}
+            draw(){let c='#E0E0E0';if(this.type==='fire')c='#FF4500';else if(this.type==='water')c='#1E90FF';else if(this.type==='earth')c='#8B4513';else if(this.type==='air')c='#F5F5F5';ctx.fillStyle=c;ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fill();}
+        }
+        class Tornado extends Projectile {
+            constructor(startX, startY, initialTarget){
+                super(startX, startY, null, 3, 20);
+                this.pathIndex = initialTarget.pathIndex;
+                this.pathTargetX = initialTarget.x;
+                this.pathTargetY = initialTarget.y;
+                this.isOnPath = false;
+                this.lifespan = 2.5;
+                this.radius = TILE_SIZE*0.8;
+                this.hitEnemies = new Set();
+                this.lastHitTimer = 0;
+            }
+            update(dT){
+                this.lifespan -= dT;
+                if(this.lifespan <= 0) this.isDead = true;
+                this.lastHitTimer -= dT;
+                this.move(dT);
+            }
+            move(dT){
+                if (!this.isOnPath) {
+                    const dx = this.pathTargetX - this.x;
+                    const dy = this.pathTargetY - this.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < this.speed) {
+                        this.x = this.pathTargetX;
+                        this.y = this.pathTargetY;
+                        this.isOnPath = true;
+                    } else {
+                        this.x += (dx / dist) * this.speed;
+                        this.y += (dy / dist) * this.speed;
+                    }
+                }
+                if(this.lastHitTimer <= 0) { this.hitEnemies.clear(); this.lastHitTimer = 0.5; }
+                enemies.forEach(e => { if (!this.hitEnemies.has(e) && Math.hypot(this.x - e.x, this.y - e.y) <= this.radius) { e.takeDamage(this.damage, true); this.hitEnemies.add(e); } });
+            }
+            hitTarget(){}
+            draw(){ctx.save();ctx.fillStyle='rgba(200,200,200,0.5)';ctx.beginPath();ctx.ellipse(this.x,this.y,this.radius,this.radius/2,0,0,Math.PI*2);ctx.fill();ctx.restore();}
+        }
+        function init() { resizeCanvas(); gold = 100; lives = 20; wave = 0; enemies = []; towers = []; projectiles = []; waveInProgress = false; totalEnemiesInWave = 0; enemiesSpawnedInWave = 0; startWaveBtn.disabled = false; startWaveBtn.textContent = 'START WAVE'; updateUI(); gameOverModal.classList.add('hidden'); deselectPlacedTower(); if (animationFrameId) cancelAnimationFrame(animationFrameId); gameLoop(); }
+        let lastTime = 0;
+        function gameLoop(timestamp) { 
+            const deltaTime=(timestamp-lastTime)/1000||0; 
+            lastTime=timestamp;
+            previewAnimationTimer += deltaTime * 2;
+
+            ctx.clearRect(0,0,canvas.width,canvas.height); 
+            drawMap(); 
+            if(selectedPlacedTower)selectedPlacedTower.drawRange(); 
+            drawTowerPreview(); 
+            towers.forEach(t=>t.draw()); 
+            enemies.forEach(e=>e.update(deltaTime)); 
+            enemies=enemies.filter(e=>!e.isDead); 
+            enemies.forEach(e=>e.draw()); 
+            towers.forEach(t=>t.update(deltaTime)); 
+            projectiles.forEach(p=>p.update(deltaTime)); 
+            projectiles=projectiles.filter(p=>!p.isDead); 
+            projectiles.forEach(p=>p.draw()); 
+            if(lives<=0){endGame();return;} 
+            if(waveInProgress&&enemies.length===0&&enemiesSpawnedInWave>=totalEnemiesInWave){endWave();} 
+            animationFrameId=requestAnimationFrame(gameLoop); 
+        }
+        function startWave() { 
+            if(waveInProgress)return; 
+            waveInProgress=true; 
+            const currentWave=wave+1; 
+            waveEl.textContent=currentWave; 
+            startWaveBtn.disabled=true; 
+            startWaveBtn.textContent=`WAVE ${currentWave} IN PROGRESS`; 
+            totalEnemiesInWave=currentWave*5 + Math.floor(currentWave / 2) * 3; 
+            enemiesSpawnedInWave=0; 
+            
+            const waveComposition = [];
+            for (let i = 0; i < totalEnemiesInWave; i++) {
+                 if (currentWave >= 5 && i % 8 === 0) {
+                    waveComposition.push('zamorak');
+                } else if (currentWave >= 4 && i % 6 === 0) {
+                    waveComposition.push('cow');
+                } else if (currentWave >= 3 && i % 4 === 1) {
+                    waveComposition.push('spider');
+                } else if (currentWave >= 2 && i % 3 === 0) {
+                    waveComposition.push('rat');
+                } else {
+                    waveComposition.push('goblin');
+                }
+            }
+            
+            const goblinHealth=50+currentWave*10; 
+            const goblinSpeed=1+currentWave*0.05; 
+            const spiderHealth=100+currentWave*25; 
+            const spiderSpeed=0.8+currentWave*0.04; 
+            const ratHealth = 40 + currentWave * 8;
+            const ratSpeed = 1.2 + currentWave * 0.06;
+            const cowHealth = 150 + currentWave * 40;
+            const cowSpeed = 0.6 + currentWave * 0.02;
+            const zamorakHealth = 200 + currentWave * 50;
+            const zamorakSpeed = 0.9 + currentWave * 0.03;
+
+            for (let i=0; i < waveComposition.length; i++){
+                setTimeout(()=>{
+                    switch(waveComposition[i]) {
+                        case 'zamorak': enemies.push(new ZamorakCrafter(zamorakHealth, zamorakSpeed)); break;
+                        case 'spider': enemies.push(new GiantSpider(spiderHealth,spiderSpeed)); break;
+                        case 'rat': enemies.push(new GiantRat(ratHealth, ratSpeed)); break;
+                        case 'cow': enemies.push(new Cow(cowHealth, cowSpeed)); break;
+                        default: enemies.push(new Goblin(goblinHealth,goblinSpeed));
+                    }
+                    enemiesSpawnedInWave++;
+                }, i * 400);
+            } 
+        }
+        function spawnSingleEnemy(type) {
+            const statWave = wave > 0 ? wave : 1;
+            const goblinHealth=50+statWave*10; 
+            const goblinSpeed=1+statWave*0.05; 
+            const spiderHealth=100+statWave*25; 
+            const spiderSpeed=0.8+statWave*0.04; 
+            const ratHealth = 40 + statWave * 8;
+            const ratSpeed = 1.2 + statWave * 0.06;
+            const cowHealth = 150 + statWave * 40;
+            const cowSpeed = 0.6 + statWave * 0.02;
+            const zamorakHealth = 200 + statWave * 50;
+            const zamorakSpeed = 0.9 + statWave * 0.03;
+
+            switch(type) {
+                case 'zamorak': enemies.push(new ZamorakCrafter(zamorakHealth, zamorakSpeed)); break;
+                case 'spider': enemies.push(new GiantSpider(spiderHealth,spiderSpeed)); break;
+                case 'rat': enemies.push(new GiantRat(ratHealth, ratSpeed)); break;
+                case 'cow': enemies.push(new Cow(cowHealth, cowSpeed)); break;
+                default: enemies.push(new Goblin(goblinHealth,goblinSpeed)); break;
+            }
+            spawnEnemyModal.classList.add('hidden');
+        }
+        function endWave() { waveInProgress=false; wave++; gold+=50+wave*5; updateUI(); startWaveBtn.disabled=false; startWaveBtn.textContent=`START WAVE ${wave+1}`; }
+        function endGame() { cancelAnimationFrame(animationFrameId); gameOverModal.classList.remove('hidden'); wavesSurvivedEl.textContent = wave; }
+        function updateUI() { goldEl.textContent=gold; livesEl.textContent=lives; waveEl.textContent=wave; if(selectedPlacedTower)updateTowerInfoPanel(); }
+        function drawMap() { 
+            ctx.lineWidth = 1; 
+            for (let y=0; y<map.length; y++) { 
+                for (let x=0; x<map[0].length; x++) { 
+                    ctx.fillStyle = map[y][x] === 1 ? '#9E8A6B' : '#5C7D3C'; 
+                    ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+                    ctx.strokeStyle = '#1E1A13'; 
+                    ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+                } 
+            } 
+            const spawnX=0,spawnY=1; const cX=spawnX*TILE_SIZE+TILE_SIZE/2,cY=spawnY*TILE_SIZE+TILE_SIZE/2; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(cX-TILE_SIZE*0.4, cY-TILE_SIZE*0.15, TILE_SIZE*0.5, TILE_SIZE*0.3); ctx.beginPath(); ctx.moveTo(cX+TILE_SIZE*0.1, cY-TILE_SIZE*0.3); ctx.lineTo(cX+TILE_SIZE*0.4, cY); ctx.lineTo(cX+TILE_SIZE*0.1, cY+TILE_SIZE*0.3); ctx.closePath(); ctx.fill(); const baseX=15,baseY=9; ctx.fillStyle='#C0C0C0'; ctx.fillRect(baseX*TILE_SIZE+TILE_SIZE*0.1, baseY*TILE_SIZE+TILE_SIZE*0.1, TILE_SIZE*0.8, TILE_SIZE*0.8); ctx.fillStyle='#8B4513'; ctx.fillRect(baseX*TILE_SIZE+TILE_SIZE*0.4, baseY*TILE_SIZE+TILE_SIZE*0.5, TILE_SIZE*0.2, TILE_SIZE*0.4); ctx.fillStyle='#A9A9A9'; ctx.fillRect(baseX*TILE_SIZE+TILE_SIZE*0.1, baseY*TILE_SIZE, TILE_SIZE*0.2, TILE_SIZE*0.2); ctx.fillRect(baseX*TILE_SIZE+TILE_SIZE*0.7, baseY*TILE_SIZE, TILE_SIZE*0.2, TILE_SIZE*0.2); 
+        }
+        function drawTowerPreview() { 
+            if(!selectedTowerType||mouseGridX<0||mouseGridY<0)return; 
+            const tX=mouseGridX*TILE_SIZE+TILE_SIZE/2,tY=mouseGridY*TILE_SIZE+TILE_SIZE/2; 
+            let isValid=(mouseGridY<map.length&&mouseGridX<map[0].length&&map[mouseGridY][mouseGridX]!==1); 
+            if(isValid){for(const t of towers){if(Math.floor(t.x/TILE_SIZE)===mouseGridX&&Math.floor(t.y/TILE_SIZE)===mouseGridY){isValid=false;break;}}} 
+            let temp; 
+            if(selectedTowerType==='archer')temp=new ArcherTower(tX,tY); 
+            else if(selectedTowerType==='mage')temp=new MageTower(tX,tY); 
+            else if(selectedTowerType==='melee')temp=new MeleeTower(tX,tY); 
+            if(temp){
+                ctx.save(); 
+                ctx.strokeStyle=isValid?'rgba(255,255,255,0.5)':'rgba(255,0,0,0.5)'; 
+                ctx.fillStyle=isValid?'rgba(255,255,255,0.1)':'rgba(255,0,0,0.2)'; 
+                ctx.beginPath(); 
+                ctx.arc(tX,tY,temp.range,0,Math.PI*2); 
+                ctx.fill(); 
+                ctx.stroke(); 
+                ctx.globalAlpha=0.5; 
+                if (temp.type === 'melee') {
+                    temp.draw(previewAnimationTimer * 0.5); 
+                } else if (temp.type === 'mage') {
+                    temp.draw(previewAnimationTimer);
+                } else {
+                    temp.draw(true); // Pass true for isPreview
+                }
+                ctx.restore();
+            } 
+        }
+        function handleCanvasClick(e) { const rect=canvas.getBoundingClientRect(); const x=e.clientX-rect.left,y=e.clientY-rect.top; const gX=Math.floor(x/TILE_SIZE),gY=Math.floor(y/TILE_SIZE); let clickedOnTower=null; for(const t of towers){if(Math.floor(t.x/TILE_SIZE)===gX&&Math.floor(t.y/TILE_SIZE)===gY){clickedOnTower=t;break;}} if(clickedOnTower)selectPlacedTower(clickedOnTower); else{if(selectedTowerType)placeTower(gX,gY);else deselectPlacedTower();} }
+        function placeTower(gridX, gridY) { if (gridY>=map.length||gridX>=map[0].length||map[gridY][gridX]===1)return; for(const t of towers){if(Math.floor(t.x/TILE_SIZE)===gridX&&Math.floor(t.y/TILE_SIZE)===gridY)return;} const COSTS={archer:25,mage:75,melee:60}; const cost=COSTS[selectedTowerType]; if(gold>=cost){gold-=cost; const tX=gridX*TILE_SIZE+TILE_SIZE/2,tY=gridY*TILE_SIZE+TILE_SIZE/2; let nT; if(selectedTowerType==='archer')nT=new ArcherTower(tX,tY); else if(selectedTowerType==='mage')nT=new MageTower(tX,tY); else if(selectedTowerType==='melee')nT=new MeleeTower(tX,tY); if(nT)towers.push(nT); updateUI();} }
+        function selectTowerType(type) { selectedTowerType=(selectedTowerType===type)?null:type; deselectPlacedTower(); archerButton.classList.toggle('selected',selectedTowerType==='archer'); mageButton.classList.toggle('selected',selectedTowerType==='mage'); meleeButton.classList.toggle('selected',selectedTowerType==='melee'); }
+        function selectPlacedTower(tower) { 
+            if (!tower || typeof tower.type === 'undefined') {
+                console.error("Attempted to select an invalid object:", tower);
+                deselectPlacedTower();
+                return;
+            }
+            selectedPlacedTower=tower; 
+            selectedTowerType=null; 
+            updateTowerInfoPanel(); 
+            archerButton.classList.remove('selected');
+            mageButton.classList.remove('selected');
+            meleeButton.classList.remove('selected'); 
+        }
+        function deselectPlacedTower() { selectedPlacedTower=null; updateTowerInfoPanel(); }
+        function updateTowerInfoPanel() { 
+            if(selectedPlacedTower && selectedPlacedTower.type){
+                buildTowerUI.classList.add('hidden'); 
+                towerInfoUI.classList.remove('hidden'); 
+                let dN = selectedPlacedTower.type.toUpperCase(); 
+                if(selectedPlacedTower.specialization)dN=`${selectedPlacedTower.specialization.toUpperCase()} TOWER`; 
+                towerNameEl.textContent=dN; 
+                towerLevelEl.textContent=selectedPlacedTower.level; 
+                towerDamageEl.textContent=selectedPlacedTower.damage; 
+                towerRangeEl.textContent=(selectedPlacedTower.range/TILE_SIZE).toFixed(1); 
+                towerSpeedEl.textContent=selectedPlacedTower.fireRate.toFixed(1); 
+                sellValueEl.textContent=selectedPlacedTower.getSellValue(); 
+                if(selectedPlacedTower.type==='mage'&&selectedPlacedTower.level>=5&&!selectedPlacedTower.specialization){
+                    upgradeTowerBtn.classList.add('hidden');
+                    mageSpecializationUI.classList.remove('hidden'); 
+                    const specCost=300; 
+                    document.querySelectorAll('.spec-btn').forEach(b=>b.disabled=gold<specCost);
+                } else if(selectedPlacedTower.specialization){
+                    upgradeTowerBtn.classList.add('hidden');
+                    mageSpecializationUI.classList.add('hidden');
+                } else {
+                    upgradeTowerBtn.classList.remove('hidden');
+                    mageSpecializationUI.classList.add('hidden');
+                    upgradeCostEl.textContent=selectedPlacedTower.upgradeCost;
+                    upgradeTowerBtn.disabled=gold<selectedPlacedTower.upgradeCost;
+                }
+            } else {
+                buildTowerUI.classList.remove('hidden');
+                towerInfoUI.classList.add('hidden');
+            } 
+        }
+        function resizeCanvas() { const cont=canvas.parentElement; const size=Math.min(cont.clientWidth,window.innerHeight*0.8); const cols=map[0].length,rows=map.length; TILE_SIZE=Math.floor(size/cols); canvas.width=TILE_SIZE*cols; canvas.height=TILE_SIZE*rows; path=pathDefinition.map(p=>({x:p.x*TILE_SIZE+TILE_SIZE/2,y:p.y*TILE_SIZE+TILE_SIZE/2})); }
+        
+        startWaveBtn.addEventListener('click', startWave);
+        restartGameBtn.addEventListener('click', init);
+        canvas.addEventListener('click', handleCanvasClick);
+        archerButton.addEventListener('click', () => selectTowerType('archer'));
+        mageButton.addEventListener('click', () => selectTowerType('mage'));
+        meleeButton.addEventListener('click', () => selectTowerType('melee'));
+        upgradeTowerBtn.addEventListener('click', () => { if(selectedPlacedTower) selectedPlacedTower.upgrade(); });
+        sellTowerBtn.addEventListener('click', () => { if(selectedPlacedTower) { gold+=selectedPlacedTower.getSellValue(); towers=towers.filter(t => t !== selectedPlacedTower); deselectPlacedTower(); updateUI();} });
+        document.querySelectorAll('.spec-btn').forEach(b => { b.addEventListener('click', () => { if(selectedPlacedTower && selectedPlacedTower.type==='mage') selectedPlacedTower.specialize(b.dataset.spec); }); });
+        window.addEventListener('resize', init);
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseGridX = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+            mouseGridY = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            mouseGridX = -1;
+            mouseGridY = -1;
+        });
+
+        const tooltipEl = document.getElementById('tooltip');
+        document.querySelectorAll('[data-tooltip]').forEach(b => { b.addEventListener('mousemove', (e) => { tooltipEl.innerHTML=b.dataset.tooltip; tooltipEl.classList.remove('hidden'); tooltipEl.style.left=`${e.clientX+15}px`; tooltipEl.style.top=`${e.clientY+15}px`; }); b.addEventListener('mouseleave', () => { tooltipEl.classList.add('hidden'); }); });
+        
+        // --- Dev Button Logic ---
+        document.getElementById('add-gold-btn').addEventListener('click', () => {
+            gold += 100;
+            updateUI();
+        });
+
+        document.getElementById('spawn-enemy-btn').addEventListener('click', () => {
+            spawnEnemyModal.classList.remove('hidden');
+        });
+
+        document.getElementById('close-spawn-modal-btn').addEventListener('click', () => {
+            spawnEnemyModal.classList.add('hidden');
+        });
+
+        document.querySelectorAll('.spawn-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                spawnSingleEnemy(btn.dataset.enemy);
+            });
+        });
+
+        init();
+    });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
